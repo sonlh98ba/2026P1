@@ -186,31 +186,45 @@ def unknown_errors(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
 
 
 @router.get("/incidents")
-def list_incidents(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def list_incidents(
+    db: Session = Depends(get_db),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+) -> dict[str, Any]:
+    total = db.query(Incident).count()
+    offset = (page - 1) * page_size
     rows = (
         db.query(Incident)
         .order_by(Incident.last_seen.desc())
-        .limit(100)
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
+    total_pages = (total + page_size - 1) // page_size if total else 0
 
-    return [
-        {
-            "id": str(i.id),
-            "message": i.message,
-            "error_type": i.error_type,
-            "severity": i.severity,
-            "service": i.service,
-            "api": i.api,
-            "status": i.status,
-            "assigned": i.assigned_to,
-            "count": i.count,
-            "created_at": i.first_seen,
-            "first_seen": i.first_seen,
-            "last_seen": i.last_seen,
-        }
-        for i in rows
-    ]
+    return {
+        "items": [
+            {
+                "id": str(i.id),
+                "message": i.message,
+                "error_type": i.error_type,
+                "severity": i.severity,
+                "service": i.service,
+                "api": i.api,
+                "status": i.status,
+                "assigned": i.assigned_to,
+                "count": i.count,
+                "created_at": i.first_seen,
+                "first_seen": i.first_seen,
+                "last_seen": i.last_seen,
+            }
+            for i in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/top-services")
@@ -239,7 +253,9 @@ def list_solutions(
     severity: str | None = Query(default=None),
     label: str | None = Query(default=None),
     q: str | None = Query(default=None),
-) -> list[dict[str, Any]]:
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+) -> dict[str, Any]:
     trace_id = trace_id.strip() if isinstance(trace_id, str) else None
     q = q.strip() if isinstance(q, str) and q.strip() else None
 
@@ -278,7 +294,17 @@ def list_solutions(
                 continue
             filtered.append(row)
 
-        return filtered
+        total = len(filtered)
+        offset = (page - 1) * page_size
+        total_pages = (total + page_size - 1) // page_size if total else 0
+
+        return {
+            "items": filtered[offset : offset + page_size],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
 
     has_solution = func.length(func.trim(func.coalesce(ErrorKnowledgeBase.solution, ""))) > 0
     no_solution = func.length(func.trim(func.coalesce(ErrorKnowledgeBase.solution, ""))) == 0
@@ -308,14 +334,23 @@ def list_solutions(
             )
         )
 
+    total = query.count()
+    offset = (page - 1) * page_size
     rows = (
-        query
-        .order_by(ErrorKnowledgeBase.occurrence.desc())
-        .limit(200)
+        query.order_by(ErrorKnowledgeBase.occurrence.desc())
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
+    total_pages = (total + page_size - 1) // page_size if total else 0
 
-    return [_build_solution_item(row) for row in rows]
+    return {
+        "items": [_build_solution_item(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 @router.put("/solutions/{error_id}")

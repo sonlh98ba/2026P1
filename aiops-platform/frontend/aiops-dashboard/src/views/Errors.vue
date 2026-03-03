@@ -121,6 +121,38 @@
           </tbody>
         </table>
       </div>
+      <div class="mt-4 flex flex-col gap-3 text-sm text-slate-300 md:flex-row md:items-center md:justify-between">
+        <p>
+          Hiển thị {{ pageStart }}-{{ pageEnd }} / {{ totalItems }} kết quả
+        </p>
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <button
+            class="ops-btn disabled:opacity-60 disabled:cursor-not-allowed"
+            :disabled="isLoading || currentPage <= 1"
+            @click="goToPage(currentPage - 1)"
+          >
+            Trước
+          </button>
+          <span>Trang {{ currentPage }} / {{ safeTotalPages }}</span>
+          <button
+            class="ops-btn disabled:opacity-60 disabled:cursor-not-allowed"
+            :disabled="isLoading || currentPage >= safeTotalPages"
+            @click="goToPage(currentPage + 1)"
+          >
+            Sau
+          </button>
+          <label class="ml-2">Số dòng/trang</label>
+          <select v-model.number="pageSize" class="ops-input w-24" @change="changePageSize">
+            <option
+              v-for="size in pageSizeOptions"
+              :key="`page-size-${size}`"
+              :value="size"
+            >
+              {{ size }}
+            </option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div
@@ -421,6 +453,11 @@ const executing = ref(false);
 const isLoading = ref(false);
 const fetchError = ref("");
 const executeMessage = ref("");
+const currentPage = ref(1);
+const pageSize = ref(10);
+const totalItems = ref(0);
+const totalPages = ref(0);
+const pageSizeOptions = [10, 20, 50, 100];
 const showAdvancedFilter = ref(false);
 const advancedFilterRef = ref(null);
 const solutionTextareaRef = ref(null);
@@ -739,6 +776,15 @@ const buildActiveFilters = () => {
   );
 };
 const hasAnyFilter = computed(() => Object.keys(buildActiveFilters()).length > 0);
+const safeTotalPages = computed(() => Math.max(totalPages.value || 0, 1));
+const pageStart = computed(() => {
+  if (!totalItems.value) return 0;
+  return (currentPage.value - 1) * pageSize.value + 1;
+});
+const pageEnd = computed(() => {
+  if (!totalItems.value) return 0;
+  return Math.min(currentPage.value * pageSize.value, totalItems.value);
+});
 watch(
   selectedFilterKeys,
   (next, prev) => {
@@ -751,31 +797,63 @@ watch(
   },
   { deep: false },
 );
-const fetchSolutions = async (activeFilters = {}) => {
+const fetchSolutions = async (activeFilters = {}, page = currentPage.value) => {
   isLoading.value = true;
   fetchError.value = "";
   try {
     const params = Object.fromEntries(
       Object.entries(activeFilters).filter(([, value]) => String(value ?? "").trim()),
     );
+    params.page = page;
+    params.page_size = pageSize.value;
+
     const res = await axios.get(`${API_BASE_URL}/api/dashboard/solutions`, {
       params,
     });
-    const raw = Array.isArray(res.data) ? res.data : res.data?.value || [];
+    const payload = res.data;
+    const raw = Array.isArray(payload) ? payload : payload?.items || [];
+    const apiTotal = Array.isArray(payload) ? raw.length : Number(payload?.total ?? raw.length);
+    const apiPage = Array.isArray(payload) ? page : Number(payload?.page ?? page);
+    const apiPageSize = Array.isArray(payload) ? pageSize.value : Number(payload?.page_size ?? pageSize.value);
+    const apiTotalPages = Array.isArray(payload)
+      ? (apiTotal ? Math.ceil(apiTotal / apiPageSize) : 0)
+      : Number(payload?.total_pages ?? 0);
+
     solutions.value = raw.map(normalizeItem);
+    totalItems.value = Number.isFinite(apiTotal) ? apiTotal : raw.length;
+    currentPage.value = Number.isFinite(apiPage) && apiPage > 0 ? apiPage : 1;
+    if (Number.isFinite(apiPageSize) && apiPageSize > 0) {
+      pageSize.value = apiPageSize;
+    }
+    totalPages.value = Number.isFinite(apiTotalPages) ? apiTotalPages : 0;
   } catch (err) {
     solutions.value = [];
+    totalItems.value = 0;
+    totalPages.value = 0;
     fetchError.value = "Không tải được dữ liệu lỗi. Vui lòng thử lại.";
   } finally {
     isLoading.value = false;
   }
 };
 const applyFilters = async () => {
+  currentPage.value = 1;
   if (!hasAnyFilter.value) {
-    await fetchSolutions();
+    await fetchSolutions({}, 1);
     return;
   }
-  await fetchSolutions(buildActiveFilters());
+  await fetchSolutions(buildActiveFilters(), 1);
+};
+const goToPage = async (nextPage) => {
+  if (isLoading.value) return;
+  const target = Number(nextPage);
+  if (!Number.isFinite(target)) return;
+  if (target < 1 || target > safeTotalPages.value) return;
+  currentPage.value = target;
+  await fetchSolutions(hasAnyFilter.value ? buildActiveFilters() : {}, target);
+};
+const changePageSize = async () => {
+  currentPage.value = 1;
+  await fetchSolutions(hasAnyFilter.value ? buildActiveFilters() : {}, 1);
 };
 const toggleAdvancedFilter = () => {
   showAdvancedFilter.value = !showAdvancedFilter.value;
@@ -790,6 +868,7 @@ const handleDocumentClick = (event) => {
 };
 const clearFilters = async () => {
   selectedFilterKeys.value = [];
+  currentPage.value = 1;
   filters.value = {
     trace_id: "",
     type: "",
@@ -800,7 +879,7 @@ const clearFilters = async () => {
     label: "",
     q: "",
   };
-  await fetchSolutions();
+  await fetchSolutions({}, 1);
 };
 const openDetail = (item) => {
   const normalized = normalizeItem(item);

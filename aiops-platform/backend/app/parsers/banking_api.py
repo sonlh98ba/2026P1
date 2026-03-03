@@ -22,6 +22,10 @@ def extract_error_message(log: dict) -> str:
     if reason:
         return str(reason)
 
+    extra_error = log.get("extra", {}).get("error")
+    if extra_error:
+        return str(extra_error)
+
     return "unknown error"
 
 
@@ -30,6 +34,8 @@ def detect_error_type(log: dict) -> str:
         return "VALIDATION"
     if log.get("extra", {}).get("reason"):
         return "BUSINESS"
+    if log.get("extra", {}).get("error"):
+        return "SYSTEM"
     if log.get("error", {}).get("message"):
         return "SYSTEM"
     return "UNKNOWN"

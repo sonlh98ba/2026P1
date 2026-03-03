@@ -45,7 +45,17 @@ def fetch_failed_logs(size=50):
         "query": {
             "bool": {
                 "filter": [
-                    {"term": {"event.status": "FAILED"}}
+                    {
+                        "bool": {
+                            "should": [
+                                {"term": {"event.status.keyword": "FAILED"}},
+                                {"term": {"event.status.keyword": "failed"}},
+                                {"term": {"event.status": "FAILED"}},
+                                {"term": {"event.status": "failed"}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    }
                 ]
             }
         },

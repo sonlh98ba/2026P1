@@ -6,7 +6,7 @@
           <span class="dot"></span>
           <span>AIOps Command</span>
         </div>
-        <p class="brand-sub">Giám sát hệ thống điều phối sự cố thông minh</p>
+        <p class="brand-sub">Giám sát hệ thống và điều phối sự cố thông minh</p>
       </div>
 
       <nav class="flex-1 p-4 space-y-2">
